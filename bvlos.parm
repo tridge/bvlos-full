@@ -1,0 +1,27 @@
+AHRS_GPS_MINSATS 12  # 6
+AHRS_GPS_USE     2   # 1 # Use GPS for DCM position and height (DEFAULT: Use GPS for DCM position)
+ARSPD2_SKIP_CAL  1   # 0 # Do not require offset calibration before flight. (DEFAULT: Disable)
+ARSPD_SKIP_CAL   1   # 0 # Do not require offset calibration before flight. (DEFAULT: Disable)
+ARSPD_WIND_MAX   17  # 0
+ARSPD_WIND_WARN  15  # 0
+BATT_FS_VOLTSRC  1   # 0 # Sag Compensated Voltage (DEFAULT: Raw Voltage)
+BATT_OPTIONS     65  # 0 # Send resistance compensated voltage to GCS (DEFAULT: )
+EK3_AFFINITY     12  # 0 # EnableGPSAffinity|EnableCompassAffinity|EnableAirspeedAffinity (DEFAULT: )
+EK3_SRC1_POSZ    3   # 1 # GPS (DEFAULT: Baro)
+FENCE_AUTOENABLE 3   # 0 # AutoEnableOnlyWhenArmed (DEFAULT: AutoEnableOff)
+FENCE_ENABLE     1   # 0 # Enabled (DEFAULT: Disabled)
+FENCE_OPTIONS    0   # 1 #  (DEFAULT: Disable mode change following fence action)
+FS_GCS_ENABL     1   # 0 # Heartbeat (DEFAULT: Disabled)
+FS_LONG_ACTN     1   # 0 # ReturnToLaunch (DEFAULT: Continue)
+FS_SHORT_ACTN    3   # 0 # Disable (DEFAULT: CIRCLE/no change(if already in AUTO|GUIDED|LOITER))
+LOG_DISARMED     3   # 0 # Discard log on reboot if never armed (DEFAULT: Disabled)
+#LOG_REPLAY       1   # 0 # Enabled (DEFAULT: Disabled)
+MIN_GROUNDSPEED  6   # 0
+RC_PROTOCOLS     8   # 1 # SBUS (DEFAULT: All)
+RTL_AUTOLAND     4   # 0 # Go directly to landing sequence via DO_RETURN_PATH_START (DEFAULT: Disable)
+TERRAIN_FOLLOW   1   # 0 # Enable all modes (DEFAULT: )
+TERRAIN_LOOKAHD  500 # default 2000
+TERRAIN_OFS_MAX  5   # 30
+TERRAIN_OPTIONS  1   # 0 # Disable Download (DEFAULT: )
+TERRAIN_SPACING  30  # 100
+THR_FAILSAFE     2   # 1 # EnabledNoFailsafe (DEFAULT: Enabled)
