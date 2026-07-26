@@ -51,13 +51,8 @@ assert(param:add_table(PARAM_TABLE_KEY, PARAM_TABLE_PREFIX, 14), 'could not add 
   // @User: Standard
 --]]
 local FEN_KML_ENABLE = bind_add_param('ENABLE', 1, 1)
-local FEN_KML_MIN_ALT = bind_add_param('MIN_ALT', 2, -1)
-local FEN_KML_MA_W_INT = bind_add_param('MA_W_INT', 3, 5)
 
 triggered = false
-min_alt_triggered = 0.0
-min_alt_disabled = nil
-min_alt_disabled_prev = nil
 
 local polygons = require("fence")
 
@@ -194,7 +189,7 @@ local function run_checks()
     local alt_amsl = loc:alt() * 0.01
     local alt_amsl_ft = feet(alt_amsl)
     local alt_agl_ft = nil
-    local terrain_alt = terrain:height_amsl(loc, false)
+    local terrain_alt = terrain:height_amsl(loc, true)
     if terrain_alt then
         alt_agl_ft = feet(alt_amsl - terrain_alt)
     end
@@ -239,31 +234,6 @@ local function run_checks()
             end
         end
     end
-    -- minimum altitude fence
-    local margin = nil
-    local now_s = millis():tofloat() * 0.001
-    local alt_agl_m = alt_agl_ft * 0.3048
-    if alt_agl_m and FEN_KML_MIN_ALT:get() > 0 then
-        margin = alt_agl_m - FEN_KML_MIN_ALT:get()
-        gcs:send_named_float("KML_MA_MAR", margin)
-        gcs:send_named_float("KML_AGL", alt_agl_m)
-        local alt_agl_dir_m = terrain:height_above_terrain(true)
-        gcs:send_named_float("KML_AGL_D", alt_agl_dir_m)
-    end
-    min_alt_disabled = vehicle:is_landing() or vehicle:is_taking_off()
-    if min_alt_disabled ~= min_alt_disabled_prev then
-        min_alt_disabled_prev = min_alt_disabled
-        if min_alt_disabled then
-            gcs:send_text(MAV_SEVERITY.INFO, "KML: Min alt fence disabled.")
-        else
-            gcs:send_text(MAV_SEVERITY.INFO, "KML: Min alt fence enabled.")
-        end
-    end
-    if margin and margin < 0 and now_s-min_alt_triggered > FEN_KML_MA_W_INT:get() and not min_alt_disabled then
-        gcs:send_text(MAV_SEVERITY.ALERT, string.format("@Breached min alt fence %.0f m", margin))
-        min_alt_triggered = now_s
-    end
-
     if breach_index and boundary_ok == false then
         local limit = limits[breach_index]
         if not triggered or limit.multi_trigger then
@@ -272,7 +242,7 @@ local function run_checks()
                 gcs:send_text(MAV_SEVERITY.ALERT, string.format("@Breached boundary %s", limit.name))
                 triggered = true
                 -- switch to RTL or specified mode
-                -- vehicle:set_mode(limit.mode or MODE_RTL)
+                vehicle:set_mode(limit.mode or MODE_RTL)
             end
         end
     end
@@ -284,7 +254,7 @@ local function run_checks()
                 gcs:send_text(MAV_SEVERITY.ALERT, string.format("@Breached %s %.0f %.0f", limit.name, alt_agl_ft, alt_amsl_ft))
                 triggered = true
                 -- switch to RTL or specified mode
-                -- vehicle:set_mode(limit.mode or MODE_RTL)
+                vehicle:set_mode(limit.mode or MODE_RTL)
             end
         end
     end

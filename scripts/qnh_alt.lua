@@ -1,7 +1,7 @@
 --[[
     example that sends QNH altitude to GCS as a NAMED_VALUE_FLOAT QNG_ALT_FT in feet
 
-    Note: operator must be QNH_PRESSURE in hPa before each flight!
+    Note: operator must set QNH_PRESSURE in hPa before each flight!
 --]]
 
 local MAV_SEVERITY = {EMERGENCY=0, ALERT=1, CRITICAL=2, ERROR=3, WARNING=4, NOTICE=5, INFO=6, DEBUG=7}
