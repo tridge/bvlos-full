@@ -1,0 +1,1264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UA NOTAM builder</title>
+<link rel="stylesheet" href="vendor/leaflet.css">
+<style>
+  :root {
+    --bg: #16191d; --panel: #1e2228; --panel2: #272c34; --line: #3a414b;
+    --fg: #e6e9ee; --dim: #9aa3af; --accent: #4da3ff;
+    --ok: #4ec97e; --warn: #f0b429; --bad: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; background: var(--bg); color: var(--fg);
+    font: 13px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+
+  #side {
+    width: 460px; flex: 0 0 460px; height: 100%; overflow-y: auto;
+    background: var(--panel); border-right: 1px solid var(--line); padding: 12px 14px 40px;
+  }
+  #map { flex: 1; height: 100%; background: #0d0f12; }
+
+  h1 { font-size: 15px; margin: 0 0 2px; letter-spacing: .3px; }
+  h1 small { font-weight: 400; color: var(--dim); font-size: 11px; }
+  h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .9px; color: var(--dim);
+    margin: 18px 0 7px; padding-bottom: 4px; border-bottom: 1px solid var(--line);
+  }
+  label { display: block; font-size: 11px; color: var(--dim); margin: 7px 0 2px; }
+  input, select, textarea, button {
+    font: inherit; color: var(--fg); background: var(--panel2);
+    border: 1px solid var(--line); border-radius: 4px; padding: 5px 7px; width: 100%;
+  }
+  input[type=file] { padding: 4px; font-size: 11px; }
+  textarea { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; resize: vertical; }
+  button { cursor: pointer; width: auto; }
+  button:hover { border-color: var(--accent); }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; min-width: 0; }
+  .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .hint { font-size: 11px; color: var(--dim); margin-top: 3px; }
+
+  /* Output fields, one per NAIPS form field. */
+  .field { margin-bottom: 7px; }
+  .field-head {
+    display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px;
+  }
+  .field-head b { font-size: 11px; font-weight: 600; }
+  .field-head .meta { font-size: 10px; color: var(--dim); margin-left: auto; }
+  .field-head .meta.over { color: var(--bad); font-weight: 700; }
+  .val {
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 4px;
+    padding: 5px 7px; white-space: pre-wrap; word-break: break-word; cursor: pointer;
+  }
+  .val:hover { border-color: var(--accent); }
+  .val.copied { border-color: var(--ok); }
+  .val.fixed { color: var(--dim); }
+
+  #lint li { margin: 0 0 4px; list-style: none; padding-left: 17px; position: relative; font-size: 12px; }
+  #lint li::before { position: absolute; left: 0; font-weight: 700; }
+  #lint li.ok::before   { content: "\2713"; color: var(--ok); }
+  #lint li.warn::before { content: "\26A0"; color: var(--warn); }
+  #lint li.bad::before  { content: "\2715"; color: var(--bad); }
+  #lint li.warn { color: var(--warn); }
+  #lint li.bad  { color: var(--bad); }
+  #lint ul { margin: 0; padding: 0; }
+
+  .badge {
+    display: inline-block; font-size: 9px; letter-spacing: .5px; text-transform: uppercase;
+    padding: 1px 5px; border-radius: 3px; background: var(--warn); color: #241a00;
+    font-weight: 700; vertical-align: middle;
+  }
+  .note { font-size: 11px; color: var(--warn); margin-top: 4px; }
+
+  .legend {
+    line-height: 1.7; background: rgba(22,25,29,.88); color: var(--fg);
+    padding: 7px 10px; border-radius: 5px; font-size: 11px; border: 1px solid var(--line);
+  }
+  .legend i { display: inline-block; width: 22px; height: 0; border-top-width: 3px; margin-right: 6px; vertical-align: middle; }
+  .leaflet-container { background: #0d0f12; }
+  .ctr-icon {
+    width: 13px; height: 13px; margin: -6px 0 0 -6px;
+    border: 2px solid #fff; border-radius: 50%; background: var(--accent); cursor: move;
+  }
+</style>
+</head>
+<body>
+
+<div id="side">
+  <h1>UA NOTAM builder <small>&mdash; NAIPS field generator</small></h1>
+  <div class="hint">Derives every field from one set of numbers, so they cannot disagree.
+    Nothing is submitted &mdash; copy the fields into NAIPS and review there.</div>
+
+  <h2>Flight area</h2>
+  <label>ArduPilot mission (.txt / .waypoints) &mdash; or drag onto the map</label>
+  <input type="file" id="missionFile" accept=".txt,.waypoints,.mission">
+  <div class="hint" id="missionInfo">No mission loaded.</div>
+
+  <div class="row">
+    <div>
+      <label>Centre latitude</label>
+      <input id="lat" type="text" spellcheck="false">
+    </div>
+    <div>
+      <label>Centre longitude</label>
+      <input id="lon" type="text" spellcheck="false">
+    </div>
+  </div>
+  <div class="hint">Decimal degrees or DDMMSS (<code>353440S</code>). Drag the blue centre marker to move it.</div>
+
+  <div class="row">
+    <div>
+      <label>Radius (NM)</label>
+      <input id="radius" type="number" step="0.1" min="0.1">
+    </div>
+    <div>
+      <label>Quote as</label>
+      <select id="radiusUnit"><option value="NM">NM</option><option value="M">metres</option></select>
+    </div>
+    <div>
+      <label>Mission buffer (NM)</label>
+      <input id="buffer" type="number" step="0.1" min="0">
+    </div>
+  </div>
+
+  <label>Max height &mdash; Item G) upper limit (FT AMSL)</label>
+  <div class="row">
+    <input id="ceiling" type="number" step="100" min="0">
+    <div class="btns" style="margin:0">
+      <button data-ceil="3900">3900</button>
+      <button data-ceil="4900">4900</button>
+      <button data-ceil="5900">5900</button>
+    </div>
+  </div>
+  <div class="hint" id="ceilInfo"></div>
+  <div class="btns">
+    <button id="fitMission">Fit to mission</button>
+    <button id="zoomArea">Zoom to area</button>
+  </div>
+
+  <h2>Reference &amp; operator</h2>
+  <label>Reference aerodrome</label>
+  <select id="aerodrome"></select>
+  <div id="adNote" class="note" hidden></div>
+
+  <label>Aircraft (Item E subject descriptor)</label>
+  <select id="aircraft"></select>
+  <input id="aircraftText" type="text" spellcheck="false">
+  <div id="acNote" class="note" hidden></div>
+
+  <div class="row">
+    <div>
+      <label>Contact name</label>
+      <input id="contactName" type="text" spellcheck="false">
+    </div>
+    <div>
+      <label>Phone</label>
+      <input id="contactPhone" type="text" spellcheck="false">
+    </div>
+    <div>
+      <label>Freq</label>
+      <input id="freq" type="text" spellcheck="false">
+    </div>
+  </div>
+
+  <h2>Times &mdash; entered in local time</h2>
+  <label>Timezone</label>
+  <select id="tz">
+    <option>Australia/Sydney</option>
+    <option>Australia/Brisbane</option>
+    <option>Australia/Adelaide</option>
+    <option>Australia/Darwin</option>
+    <option>Australia/Perth</option>
+    <option>Australia/Hobart</option>
+  </select>
+  <div class="row">
+    <div>
+      <label>Start (local)</label>
+      <input id="startLocal" type="datetime-local">
+    </div>
+    <div>
+      <label>End (local)</label>
+      <input id="endLocal" type="datetime-local">
+    </div>
+  </div>
+  <div class="hint" id="timeInfo"></div>
+
+  <h2>NAIPS fields <small style="font-weight:400;text-transform:none;letter-spacing:0">(click any to copy)</small></h2>
+  <div id="fields"></div>
+
+  <h2>Checks <span class="hint" style="text-transform:none;letter-spacing:0">C-MAN0284 v7</span></h2>
+  <div id="lint"></div>
+
+  <h2>Verify a published NOTAM</h2>
+  <div class="hint">Paste the NOTAM as NAIPS/NOF published it. Every bearing and distance in
+    it is recomputed from the position it quotes, and the summary is checked against Item E.</div>
+  <textarea id="checkText" rows="6" spellcheck="false" placeholder="C3031/25 NOTAMN&#10;Q) YMMM/QWULW/..."></textarea>
+  <div class="btns"><button id="checkBtn">Check</button></div>
+  <div id="checkOut"></div>
+
+  <h2>Saved operations</h2>
+  <select id="siteSelect"></select>
+  <div class="btns">
+    <button id="loadSite">Load</button>
+    <button id="saveJson">Save to file</button>
+    <button id="loadJsonBtn">Load from file</button>
+    <input type="file" id="loadJson" accept=".json" hidden>
+  </div>
+
+  <h2>Layers</h2>
+  <div class="btns">
+    <button id="toggleApproved">Approved area: on</button>
+    <input type="file" id="kmlFile" accept=".kml" hidden>
+    <button id="kmlBtn">Load other KML</button>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<script src="vendor/leaflet.js"></script>
+<script src="profiles.js"></script>
+<script src="approved_area.js"></script>
+<script>
+"use strict";
+
+/* ------------------------------------------------------------------ *
+ * Geodesy -- Vincenty on WGS84.
+ * ------------------------------------------------------------------ */
+
+var A = 6378137.0, F = 1 / 298.257223563, B = A * (1 - F);
+var M_PER_NM = 1852.0;
+var D2R = Math.PI / 180, R2D = 180 / Math.PI;
+
+function vincentyInverse(lat1, lon1, lat2, lon2) {
+  var L = (lon2 - lon1) * D2R;
+  var U1 = Math.atan((1 - F) * Math.tan(lat1 * D2R));
+  var U2 = Math.atan((1 - F) * Math.tan(lat2 * D2R));
+  var sU1 = Math.sin(U1), cU1 = Math.cos(U1);
+  var sU2 = Math.sin(U2), cU2 = Math.cos(U2);
+  var lam = L, lamP, iter = 0;
+  var sLam, cLam, sSig, cSig, sig, sAlpha, cSqAlpha, cos2SigM, C;
+  do {
+    sLam = Math.sin(lam); cLam = Math.cos(lam);
+    var t1 = cU2 * sLam, t2 = cU1 * sU2 - sU1 * cU2 * cLam;
+    sSig = Math.sqrt(t1 * t1 + t2 * t2);
+    if (sSig === 0) return { distance: 0, bearing: 0 };  // coincident
+    cSig = sU1 * sU2 + cU1 * cU2 * cLam;
+    sig = Math.atan2(sSig, cSig);
+    sAlpha = cU1 * cU2 * sLam / sSig;
+    cSqAlpha = 1 - sAlpha * sAlpha;
+    cos2SigM = cSqAlpha === 0 ? 0 : cSig - 2 * sU1 * sU2 / cSqAlpha;  // equatorial line
+    C = F / 16 * cSqAlpha * (4 + F * (4 - 3 * cSqAlpha));
+    lamP = lam;
+    lam = L + (1 - C) * F * sAlpha *
+      (sig + C * sSig * (cos2SigM + C * cSig * (-1 + 2 * cos2SigM * cos2SigM)));
+  } while (Math.abs(lam - lamP) > 1e-12 && ++iter < 200);
+
+  var uSq = cSqAlpha * (A * A - B * B) / (B * B);
+  var Ac = 1 + uSq / 16384 * (4096 + uSq * (-768 + uSq * (320 - 175 * uSq)));
+  var Bc = uSq / 1024 * (256 + uSq * (-128 + uSq * (74 - 47 * uSq)));
+  var dSig = Bc * sSig * (cos2SigM + Bc / 4 * (cSig * (-1 + 2 * cos2SigM * cos2SigM) -
+    Bc / 6 * cos2SigM * (-3 + 4 * sSig * sSig) * (-3 + 4 * cos2SigM * cos2SigM)));
+  return {
+    distance: B * Ac * (sig - dSig),
+    bearing: (Math.atan2(cU2 * sLam, cU1 * sU2 - sU1 * cU2 * cLam) * R2D + 360) % 360
+  };
+}
+
+function vincentyDirect(lat1, lon1, brgDeg, dist) {
+  var a1 = brgDeg * D2R;
+  var s1 = Math.sin(a1), c1 = Math.cos(a1);
+  var tU1 = (1 - F) * Math.tan(lat1 * D2R);
+  var cU1 = 1 / Math.sqrt(1 + tU1 * tU1), sU1 = tU1 * cU1;
+  var sig1 = Math.atan2(tU1, c1);
+  var sAlpha = cU1 * s1, cSqAlpha = 1 - sAlpha * sAlpha;
+  var uSq = cSqAlpha * (A * A - B * B) / (B * B);
+  var Ac = 1 + uSq / 16384 * (4096 + uSq * (-768 + uSq * (320 - 175 * uSq)));
+  var Bc = uSq / 1024 * (256 + uSq * (-128 + uSq * (74 - 47 * uSq)));
+  var sig = dist / (B * Ac), sigP, sSig, cSig, c2SigM, dSig, iter = 0;
+  do {
+    c2SigM = Math.cos(2 * sig1 + sig);
+    sSig = Math.sin(sig); cSig = Math.cos(sig);
+    dSig = Bc * sSig * (c2SigM + Bc / 4 * (cSig * (-1 + 2 * c2SigM * c2SigM) -
+      Bc / 6 * c2SigM * (-3 + 4 * sSig * sSig) * (-3 + 4 * c2SigM * c2SigM)));
+    sigP = sig;
+    sig = dist / (B * Ac) + dSig;
+  } while (Math.abs(sig - sigP) > 1e-12 && ++iter < 200);
+
+  var tmp = sU1 * sSig - cU1 * cSig * c1;
+  var lat2 = Math.atan2(sU1 * cSig + cU1 * sSig * c1,
+    (1 - F) * Math.sqrt(sAlpha * sAlpha + tmp * tmp));
+  var lam = Math.atan2(sSig * s1, cU1 * cSig - sU1 * sSig * c1);
+  var C = F / 16 * cSqAlpha * (4 + F * (4 - 3 * cSqAlpha));
+  var L = lam - (1 - C) * F * sAlpha *
+    (sig + C * sSig * (c2SigM + C * cSig * (-1 + 2 * c2SigM * c2SigM)));
+  return { lat: lat2 * R2D, lon: lon1 + L * R2D };
+}
+
+/* Geodesic circle as a polygon -- Leaflet's L.circle is a projected ellipse,
+   which is visibly wrong at a 7NM radius and cannot be used for containment. */
+function geoCircle(lat, lon, metres, n) {
+  var pts = [], i;
+  n = n || 128;
+  for (i = 0; i <= n; i++) {
+    var p = vincentyDirect(lat, lon, i * 360 / n, metres);
+    pts.push([p.lat, p.lon]);
+  }
+  return pts;
+}
+
+/* ------------------------------------------------------------------ *
+ * Coordinate formatting.
+ * ------------------------------------------------------------------ */
+
+function pad(n, w) { n = String(n); while (n.length < w) n = '0' + n; return n; }
+
+/* DDMMSS + hemisphere, per C-MAN0284 s7.2. Carries seconds/minutes overflow
+   rather than emitting the 60 that naive rounding produces. */
+function toDMS(deg, isLat) {
+  var hemi = deg < 0 ? (isLat ? 'S' : 'W') : (isLat ? 'N' : 'E');
+  var a = Math.abs(deg);
+  var d = Math.floor(a);
+  var m = Math.floor((a - d) * 60);
+  var s = Math.round((((a - d) * 60) - m) * 60);
+  if (s === 60) { s = 0; m += 1; }
+  if (m === 60) { m = 0; d += 1; }
+  return pad(d, isLat ? 2 : 3) + pad(m, 2) + pad(s, 2) + hemi;
+}
+
+/* DDMM + hemisphere, as the Q) field encodes the centre. */
+function toDM(deg, isLat) {
+  var hemi = deg < 0 ? (isLat ? 'S' : 'W') : (isLat ? 'N' : 'E');
+  var a = Math.abs(deg);
+  var d = Math.floor(a);
+  var m = Math.round((a - d) * 60);
+  if (m === 60) { m = 0; d += 1; }
+  return pad(d, isLat ? 2 : 3) + pad(m, 2) + hemi;
+}
+
+/* Accepts decimal degrees, DDMMSS[.s]H, DDMM.mmmH, or "35 34 40 S". */
+function parseCoord(str, isLat) {
+  if (str == null) return NaN;
+  var s = String(str).trim().toUpperCase();
+  if (!s) return NaN;
+  var sign = 1;
+  var hm = s.match(/[NSEW]/);
+  if (hm) { if (hm[0] === 'S' || hm[0] === 'W') sign = -1; s = s.replace(/[NSEW]/g, '').trim(); }
+  if (s[0] === '-') { sign = -1; s = s.slice(1); }
+  if (s[0] === '+') s = s.slice(1);
+
+  var parts = s.split(/[\s:\u00b0'"]+/).filter(function (x) { return x !== ''; });
+  if (parts.length >= 2) {
+    var v = 0, sc = 1, i;
+    for (i = 0; i < parts.length && i < 3; i++) { v += parseFloat(parts[i]) / sc; sc *= 60; }
+    return sign * v;
+  }
+
+  // Single token: compact DDMMSS if long enough, otherwise decimal degrees.
+  var dd = isLat ? 2 : 3;
+  var dot = s.indexOf('.');
+  var intLen = dot < 0 ? s.length : dot;
+  if (hm && intLen >= dd + 4) {
+    return sign * (parseInt(s.slice(0, dd), 10) + parseInt(s.slice(dd, dd + 2), 10) / 60 +
+      parseFloat(s.slice(dd + 2)) / 3600);
+  }
+  if (hm && intLen >= dd + 2) {
+    return sign * (parseInt(s.slice(0, dd), 10) + parseFloat(s.slice(dd)) / 60);
+  }
+  return sign * parseFloat(s);
+}
+
+/* ------------------------------------------------------------------ *
+ * ArduPilot mission file (QGC WPL 110).
+ * seq cur frame cmd p1 p2 p3 p4 x y z autocontinue
+ * ------------------------------------------------------------------ */
+
+/* Commands whose x/y are a real position the aircraft flies to. DO_* and
+   CONDITION_* are excluded: DO_SET_ROI in particular carries a position that
+   is a camera target, and including it drags the enclosing circle badly. */
+var NAV_CMDS = {
+  16: 'WAYPOINT', 17: 'LOITER_UNLIM', 18: 'LOITER_TURNS', 19: 'LOITER_TIME',
+  20: 'RETURN_TO_LAUNCH', 21: 'LAND', 22: 'TAKEOFF', 31: 'LOITER_TO_ALT',
+  82: 'SPLINE_WAYPOINT', 84: 'VTOL_TAKEOFF', 85: 'VTOL_LAND'
+};
+
+function parseMission(text) {
+  var lines = text.split(/\r?\n/);
+  var pts = [], skipped = 0, bad = 0, home = null;
+  if (!/^QGC\s+WPL/i.test(lines[0] || '')) {
+    // Tolerate a missing header rather than refusing the file.
+    bad = -1;
+  }
+  for (var i = 0; i < lines.length; i++) {
+    var ln = lines[i].trim();
+    if (!ln || /^QGC\s+WPL/i.test(ln) || ln[0] === '#') continue;
+    var f = ln.split(/[\t,\s]+/);
+    if (f.length < 11) { bad++; continue; }
+    var seq = parseInt(f[0], 10), cmd = parseInt(f[3], 10);
+    var lat = parseFloat(f[8]), lon = parseFloat(f[9]), alt = parseFloat(f[10]);
+    if (!isFinite(lat) || !isFinite(lon)) { bad++; continue; }
+    if (Math.abs(lat) < 1e-7 && Math.abs(lon) < 1e-7) { skipped++; continue; }
+    if (!NAV_CMDS[cmd]) { skipped++; continue; }
+    var pt = { seq: seq, cmd: cmd, name: NAV_CMDS[cmd], lat: lat, lon: lon, alt: alt };
+    if (seq === 0) { home = pt; continue; }   // row 0 is home, not a flown leg
+    pts.push(pt);
+  }
+  return { points: pts, home: home, skipped: skipped, bad: bad };
+}
+
+/* ------------------------------------------------------------------ *
+ * Minimum enclosing circle (Welzl), in a local metric frame.
+ * ------------------------------------------------------------------ */
+
+function enclosingCircle(pts) {
+  if (!pts.length) return null;
+  var lat0 = pts.reduce(function (s, p) { return s + p.lat; }, 0) / pts.length;
+  var lon0 = pts.reduce(function (s, p) { return s + p.lon; }, 0) / pts.length;
+  var k = Math.cos(lat0 * D2R) * 111320, kk = 110540;
+  var xy = pts.map(function (p) { return { x: (p.lon - lon0) * k, y: (p.lat - lat0) * kk }; });
+
+  function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+  function inside(c, p) { return dist(c, p) <= c.r + 1e-6; }
+  function from2(a, b) {
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, r: dist(a, b) / 2 };
+  }
+  function from3(a, b, c) {
+    var bx = b.x - a.x, by = b.y - a.y, cx = c.x - a.x, cy = c.y - a.y;
+    var d = 2 * (bx * cy - by * cx);
+    if (Math.abs(d) < 1e-12) return null;
+    var ux = (cy * (bx * bx + by * by) - by * (cx * cx + cy * cy)) / d;
+    var uy = (bx * (cx * cx + cy * cy) - cx * (bx * bx + by * by)) / d;
+    return { x: a.x + ux, y: a.y + uy, r: Math.hypot(ux, uy) };
+  }
+
+  // Shuffle deterministically so results are reproducible run to run.
+  var pl = xy.slice(), seed = 12345, i, j, t;
+  for (i = pl.length - 1; i > 0; i--) {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    j = seed % (i + 1); t = pl[i]; pl[i] = pl[j]; pl[j] = t;
+  }
+
+  var c = { x: pl[0].x, y: pl[0].y, r: 0 };
+  for (i = 1; i < pl.length; i++) {
+    if (inside(c, pl[i])) continue;
+    c = { x: pl[i].x, y: pl[i].y, r: 0 };
+    for (j = 0; j < i; j++) {
+      if (inside(c, pl[j])) continue;
+      c = from2(pl[i], pl[j]);
+      for (var m = 0; m < j; m++) {
+        if (inside(c, pl[m])) continue;
+        var c3 = from3(pl[i], pl[j], pl[m]);
+        if (c3) c = c3;
+      }
+    }
+  }
+  return { lat: lat0 + c.y / kk, lon: lon0 + c.x / k, radius: c.r };
+}
+
+/* ------------------------------------------------------------------ *
+ * Time -- local wall clock in a named zone to UTC.
+ * ------------------------------------------------------------------ */
+
+function zoneOffset(date, tz) {
+  var dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+  var p = {};
+  dtf.formatToParts(date).forEach(function (x) { p[x.type] = x.value; });
+  var asUTC = Date.UTC(+p.year, p.month - 1, +p.day, (+p.hour) % 24, +p.minute, +p.second);
+  return asUTC - date.getTime();
+}
+
+/* Iterates because the offset depends on the instant we are solving for. */
+function localToUtc(str, tz) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(str || '');
+  if (!m) return null;
+  var naive = Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5]);
+  var ts = naive;
+  for (var i = 0; i < 4; i++) ts = naive - zoneOffset(new Date(ts), tz);
+  return new Date(ts);
+}
+
+function utcStamp(d) {  /* YYMMDDHHMM as Items B) and C) want it */
+  return pad(d.getUTCFullYear() % 100, 2) + pad(d.getUTCMonth() + 1, 2) +
+    pad(d.getUTCDate(), 2) + pad(d.getUTCHours(), 2) + pad(d.getUTCMinutes(), 2);
+}
+
+function zoneLabel(d, tz) {
+  var p = new Intl.DateTimeFormat('en-AU', { timeZone: tz, timeZoneName: 'short' })
+    .formatToParts(d).filter(function (x) { return x.type === 'timeZoneName'; });
+  return p.length ? p[0].value : tz;
+}
+
+/* ------------------------------------------------------------------ *
+ * State.
+ * ------------------------------------------------------------------ */
+
+var P = NOTAM_PROFILES;
+var state = {
+  lat: P.sites[0].lat, lon: P.sites[0].lon,
+  radiusNm: P.sites[0].radiusNm, radiusUnit: 'NM', bufferNm: P.defaults.bufferNm,
+  ceilingFt: P.sites[0].ceilingFt,
+  aerodrome: P.aerodromes[0], aircraft: P.aircraft[0].descriptor,
+  contactName: P.contacts[0].name, contactPhone: P.contacts[0].phone,
+  freq: P.frequencies[0].value, tz: P.defaults.timezone,
+  startLocal: '', endLocal: '', mission: null
+};
+
+function ad() { return state.aerodrome; }
+
+/* Everything downstream of the geometry, computed once. */
+function derive() {
+  var a = ad();
+  var inv = vincentyInverse(a.lat, a.lon, state.lat, state.lon);
+  var magBrg = ((inv.bearing - a.variation) % 360 + 360) % 360;
+  var distNm = inv.distance / M_PER_NM;
+
+  // s7.3 says NM above 2NM and metres below, but the s12.2 UA templates in the
+  // same document use "0.5NM RADIUS" -- so the unit is the operator's call and
+  // the lint only advises. C3031/25 quoted 1NM and NOF accepted it.
+  var radStr = state.radiusUnit === 'M'
+    ? Math.round(state.radiusNm * M_PER_NM / 10) * 10 + 'M'
+    : state.radiusNm.toFixed(1) + 'NM';
+
+  // Q) centre is rounded to whole arc-minutes; grow the Q radius so the
+  // rounded circle still provably contains the ops circle.
+  var qLat = Math.round(state.lat * 60) / 60, qLon = Math.round(state.lon * 60) / 60;
+  var shift = vincentyInverse(qLat, qLon, state.lat, state.lon).distance / M_PER_NM;
+  var qRadius = Math.max(1, Math.ceil(state.radiusNm + shift));
+
+  return {
+    magBrg: magBrg, brgStr: pad(Math.round(magBrg) % 360 || 360, 3),
+    distNm: distNm, distStr: distNm.toFixed(1) + 'NM',
+    radiusStr: radStr,
+    posStr: toDMS(state.lat, true) + ' ' + toDMS(state.lon, false),
+    qLat: qLat, qLon: qLon, qRadius: qRadius, qShift: shift,
+    upperFl: pad(Math.round(state.ceilingFt / 100), 3)
+  };
+}
+
+function buildFields() {
+  var d = derive(), a = ad();
+  var subst = {
+    RADIUS: d.radiusStr, POSITION: d.posStr, BEARING: d.brgStr, DISTANCE: d.distStr,
+    AD_NAME: a.name, AD_ID: a.id, FREQ: state.freq, PHONE: state.contactPhone
+  };
+  var text = P.textLines.map(function (ln) {
+    return ln.replace(/\{\{(\w+)\}\}/g, function (_, k) { return subst[k] || ''; });
+  }).join('\n');
+
+  var start = localToUtc(state.startLocal, state.tz);
+  var end = localToUtc(state.endLocal, state.tz);
+
+  return {
+    d: d, start: start, end: end,
+    group: P.group,
+    contactName: state.contactName,
+    contactPhone: state.contactPhone,
+    summary: 'UA OPS BRG ' + d.brgStr + ' MAG ' + d.distStr + ' FM ' + a.id,
+    itemA: P.fir,
+    itemB: start ? utcStamp(start) : '',
+    itemC: end ? utcStamp(end) : '',
+    subject: 'UA OPS (' + state.aircraft + ') BRG ' + d.brgStr + ' MAG ' + d.distStr + ' FM ' + a.id,
+    status: P.defaults.status,
+    text: text,
+    itemF: 'SFC',
+    itemG: state.ceilingFt + ' FT AMSL',
+    qLine: P.fir + '/QWULW/IV/BO/W/000/' + d.upperFl + '/' +
+      toDM(d.qLat, true) + toDM(d.qLon, false) + pad(d.qRadius, 3)
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * Map.
+ * ------------------------------------------------------------------ */
+
+var map = L.map('map', { zoomControl: true }).setView([state.lat, state.lon], 11);
+
+var imagery = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 19, attribution: 'Esri World Imagery' }).addTo(map);
+var osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  { maxZoom: 19, attribution: '&copy; OpenStreetMap' });
+L.control.layers({ 'Imagery': imagery, 'OpenStreetMap': osm }, null,
+  { position: 'topright' }).addTo(map);
+
+var layers = {
+  approved: L.layerGroup().addTo(map),
+  mission: L.layerGroup().addTo(map),
+  notam: L.layerGroup().addTo(map)
+};
+
+var centreMarker = L.marker([state.lat, state.lon], {
+  draggable: true,
+  icon: L.divIcon({ className: '', html: '<div class="ctr-icon"></div>', iconSize: [0, 0] })
+}).addTo(map);
+centreMarker.on('drag', function (e) {
+  var ll = e.target.getLatLng();
+  state.lat = ll.lat; state.lon = ll.lng;
+  syncInputs(); render();
+});
+
+var legend = L.control({ position: 'bottomright' });
+legend.onAdd = function () {
+  var el = L.DomUtil.create('div', 'legend');
+  el.innerHTML =
+    '<i style="border-top:3px solid #4da3ff"></i>NOTAM area<br>' +
+    '<i style="border-top:3px dashed #f0b429"></i>Q) line circle<br>' +
+    '<i style="border-top:3px solid #ff6b6b"></i>Mission<br>' +
+    '<i style="border-top:3px solid #4ec97e"></i>Flight geography<br>' +
+    '<i style="border-top:3px solid #b07cff"></i>Radial from aerodrome';
+  return el;
+};
+legend.addTo(map);
+
+var approvedOn = true;
+
+function drawApproved() {
+  layers.approved.clearLayers();
+  if (!approvedOn || typeof APPROVED_AREA === 'undefined') return;
+  var style = {
+    flight_geography: { color: '#4ec97e', weight: 2, fillOpacity: 0.06 },
+    contingency: { color: '#4ec97e', weight: 1, dashArray: '4,4', fillOpacity: 0.03 },
+    grb: { color: '#8fd6a8', weight: 1, dashArray: '2,5', fillOpacity: 0.02 },
+    altitude_limit: { color: '#7fd3ff', weight: 1, fillOpacity: 0.04 },
+    nfz: { color: '#ff9a3c', weight: 1, fillOpacity: 0.12 },
+    other: { color: '#8899aa', weight: 1, fillOpacity: 0.02 }
+  };
+  L.geoJSON(APPROVED_AREA, {
+    style: function (f) { return style[f.properties.kind] || style.other; },
+    onEachFeature: function (f, l) {
+      if (f.properties.name) l.bindTooltip(f.properties.name, { sticky: true });
+    }
+  }).addTo(layers.approved);
+}
+
+function drawMission() {
+  layers.mission.clearLayers();
+  var m = state.mission;
+  if (!m) return;
+  var track = m.points.map(function (p) { return [p.lat, p.lon]; });
+  if (track.length > 1) {
+    L.polyline(track, { color: '#ff6b6b', weight: 2, opacity: 0.9 }).addTo(layers.mission);
+  }
+  m.points.forEach(function (p) {
+    L.circleMarker([p.lat, p.lon], {
+      radius: 4, color: '#ff6b6b', fillColor: '#ff6b6b', fillOpacity: 0.9, weight: 1
+    }).bindTooltip('#' + p.seq + ' ' + p.name + '<br>' + p.alt + 'm').addTo(layers.mission);
+  });
+  if (m.home) {
+    L.circleMarker([m.home.lat, m.home.lon], {
+      radius: 6, color: '#ffffff', fillColor: '#ff6b6b', fillOpacity: 1, weight: 2
+    }).bindTooltip('HOME').addTo(layers.mission);
+  }
+}
+
+function drawNotam() {
+  layers.notam.clearLayers();
+  var d = derive(), a = ad();
+
+  L.polygon(geoCircle(state.lat, state.lon, state.radiusNm * M_PER_NM), {
+    color: '#4da3ff', weight: 2, fillOpacity: 0.10
+  }).addTo(layers.notam);
+
+  var contains = qContains(d);
+  L.polygon(geoCircle(d.qLat, d.qLon, d.qRadius * M_PER_NM), {
+    color: contains ? '#f0b429' : '#ff6b6b', weight: 2, dashArray: '7,6', fill: false
+  }).bindTooltip('Q) circle: ' + d.qRadius + 'NM' +
+    (contains ? '' : ' -- DOES NOT CONTAIN THE NOTAM AREA')).addTo(layers.notam);
+
+  L.polyline([[a.lat, a.lon], [state.lat, state.lon]], {
+    color: '#b07cff', weight: 2, opacity: 0.85
+  }).bindTooltip('BRG ' + d.brgStr + ' MAG ' + d.distStr + ' FM ' + a.id, { permanent: false })
+    .addTo(layers.notam);
+
+  L.circleMarker([a.lat, a.lon], {
+    radius: 5, color: '#b07cff', fillColor: '#b07cff', fillOpacity: 1, weight: 1
+  }).bindTooltip(a.id + ' ARP').addTo(layers.notam);
+}
+
+/* ------------------------------------------------------------------ *
+ * Altitude steps -- does the ceiling fit the approved area it sits in?
+ * ------------------------------------------------------------------ */
+
+/* ring is GeoJSON [[lon, lat], ...] */
+function pointInRing(lat, lon, ring) {
+  var inside = false, i, j;
+  for (i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    var xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+    if ((yi > lat) !== (yj > lat) &&
+        lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/* Points that must be legal: the NOTAM centre and its perimeter -- the NOTAM
+   claims the whole circle -- plus every mission waypoint if one is loaded. */
+function areaSamplePoints() {
+  var pts = [[state.lat, state.lon]];
+  geoCircle(state.lat, state.lon, state.radiusNm * M_PER_NM, 48).forEach(function (p) {
+    pts.push([p[0], p[1]]);
+  });
+  if (state.mission) {
+    state.mission.points.forEach(function (p) { pts.push([p.lat, p.lon]); });
+    if (state.mission.home) pts.push([state.mission.home.lat, state.mission.home.lon]);
+  }
+  return pts;
+}
+
+/* Altitude-limit polygons of the approved area that the NOTAM area touches. */
+function altitudeSteps() {
+  if (typeof APPROVED_AREA === 'undefined') return [];
+  var pts = areaSamplePoints(), hits = [];
+  APPROVED_AREA.features.forEach(function (f) {
+    if (f.properties.kind !== 'altitude_limit' || f.geometry.type !== 'Polygon') return;
+    var m = /(\d+)\s*ft\s*(amsl|agl)/i.exec(f.properties.name);
+    if (!m) return;
+    var ring = f.geometry.coordinates[0];
+    var n = pts.filter(function (p) { return pointInRing(p[0], p[1], ring); }).length;
+    if (n) hits.push({
+      name: f.properties.name, limit: +m[1], datum: m[2].toUpperCase(),
+      all: n === pts.length
+    });
+  });
+  return hits;
+}
+
+function qContains(d) {
+  return d.qRadius >= state.radiusNm + d.qShift - 1e-9;
+}
+
+/* ------------------------------------------------------------------ *
+ * Rendering the panel.
+ * ------------------------------------------------------------------ */
+
+function fieldRow(label, value, meta, cls) {
+  var over = meta && meta.over;
+  return '<div class="field"><div class="field-head"><b>' + label + '</b>' +
+    (meta ? '<span class="meta' + (over ? ' over' : '') + '">' + meta.text + '</span>' : '') +
+    '</div><div class="val' + (cls ? ' ' + cls : '') + '" data-copy="' +
+    String(value).replace(/"/g, '&quot;') + '">' +
+    String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</div></div>';
+}
+
+function renderFields(f) {
+  var html = '';
+  html += fieldRow('Group', f.group, null, 'fixed');
+  html += fieldRow('Contact Name', f.contactName || '(not set)');
+  html += fieldRow('Phone Number', f.contactPhone || '(not set)');
+  html += fieldRow('NOTAM Summary', f.summary,
+    { text: f.summary.length + '/50', over: f.summary.length > 50 });
+  html += fieldRow('Item A) Location', f.itemA, null, 'fixed');
+  html += fieldRow('Item B) Start (UTC)', f.itemB || '(set a start time)');
+  html += fieldRow('Item C) End (UTC)', f.itemC || '(set an end time)');
+  html += fieldRow('Item E) Subject', f.subject);
+  html += fieldRow('Item E) Status', f.status);
+  html += fieldRow('Item E) Text', f.text);
+  html += fieldRow('Item F) Lower Limit', f.itemF, null, 'fixed');
+  html += fieldRow('Item G) Upper Limit', f.itemG);
+  html += fieldRow('Q) line (predicted \u2014 NAIPS generates its own)', f.qLine, null, 'fixed');
+  html += '<div class="hint">Cross-check only. This rounds the centre to the nearest minute and ' +
+    'grows the radius so the ring still contains the area; NAIPS truncates instead, so a 1NM ' +
+    'difference here is expected rather than an error.</div>';
+  document.getElementById('fields').innerHTML = html;
+}
+
+function lintItems(f) {
+  var out = [], d = f.d, a = ad();
+
+  // The C3031/25 defect: the same bearing and distance stated twice, differently.
+  var sm = /BRG (\d{3}) MAG ([\d.]+NM)/.exec(f.summary);
+  var su = /BRG (\d{3}) MAG ([\d.]+NM)/.exec(f.subject);
+  if (sm && su && sm[1] === su[1] && sm[2] === su[2]) {
+    out.push(['ok', 'Summary and Item E quote the same bearing and distance (' + sm[1] + '/' + sm[2] + ').']);
+  } else {
+    out.push(['bad', 'Summary and Item E disagree on bearing/distance.']);
+  }
+
+  // And Item E text must quote them too.
+  if (f.text.indexOf('BRG ' + d.brgStr + ' MAG ' + d.distStr) >= 0) {
+    out.push(['ok', 'Item E text quotes the same bearing and distance.']);
+  } else {
+    out.push(['bad', 'Item E text does not quote BRG ' + d.brgStr + ' MAG ' + d.distStr + '.']);
+  }
+
+  out.push(f.summary.length <= 50
+    ? ['ok', 'Summary is ' + f.summary.length + ' characters (limit 50).']
+    : ['bad', 'Summary is ' + f.summary.length + ' characters \u2014 over the 50 limit.']);
+
+  var banned = /\b(RPAS|RPA|UAV|DRONE|UAS)\b/.exec(f.subject + ' ' + f.text + ' ' + f.summary);
+  out.push(banned
+    ? ['bad', 'Uses "' + banned[1] + '" \u2014 s12.2 requires "UA".']
+    : ['ok', 'Uses "UA" throughout, no RPA/RPAS/UAV/drone.']);
+
+  out.push(/\d+\s*KG/i.test(f.subject)
+    ? ['ok', 'Subject states the aircraft type and weight.']
+    : ['bad', 'Subject must state the aircraft type and weight (s12.2).']);
+  if (/\?\?/.test(f.subject)) out.push(['bad', 'Aircraft descriptor still contains "??".']);
+
+  out.push(f.text.indexOf(d.posStr) >= 0
+    ? ['ok', 'Position ' + d.posStr + ' is DDMMSS and matches the plotted centre.']
+    : ['bad', 'Item E text does not quote the plotted position ' + d.posStr + '.']);
+
+  // s7.3 wants metres below 2NM, but the s12.2 UA templates in the same document
+  // use "0.5NM RADIUS". Advisory only -- either form has been accepted by NOF.
+  if (state.radiusNm >= 2 && state.radiusUnit === 'NM') {
+    out.push(['ok', 'Radius ' + d.radiusStr + ' \u2014 NM above 2NM, per s7.3.']);
+  } else if (state.radiusNm < 2 && state.radiusUnit === 'M') {
+    out.push(['ok', 'Radius ' + d.radiusStr + ' \u2014 metres below 2NM, per s7.3.']);
+  } else if (state.radiusNm < 2) {
+    out.push(['warn', 'Radius ' + d.radiusStr + ' \u2014 s7.3 asks for metres below 2NM, though the ' +
+      's12.2 UA templates use "0.5NM RADIUS" and NOF accepted 1NM on C3031/25.']);
+  } else {
+    out.push(['warn', 'Radius ' + d.radiusStr + ' \u2014 s7.3 asks for NM above 2NM.']);
+  }
+
+  out.push(/OPR CTC TEL:\s*[\d ]{8,}/.test(f.text)
+    ? ['ok', 'Contact telephone present in Item E.']
+    : ['bad', 'Item E needs "OPR CTC TEL:" with a contact number.']);
+
+  var g = /^(\d+) FT AMSL$/.exec(f.itemG);
+  out.push(g && pad(Math.round(+g[1] / 100), 3) === d.upperFl
+    ? ['ok', 'Item G ' + f.itemG + ' agrees with Q) upper ' + d.upperFl + '.']
+    : ['bad', 'Item G and the Q) upper limit disagree.']);
+
+  // Ceiling against the approved area's altitude steps.
+  var steps = altitudeSteps();
+  var amsl = steps.filter(function (s) { return s.datum === 'AMSL'; });
+  if (!steps.length) {
+    out.push(['warn', 'The NOTAM area touches no mapped altitude step — it is outside the ' +
+      'approved BVLOS area, so ' + state.ceilingFt + 'FT AMSL is not checked against it.']);
+  } else {
+    var highest = Math.max.apply(null, amsl.map(function (s) { return s.limit; }).concat([0]));
+    if (amsl.length && state.ceilingFt > highest) {
+      out.push(['bad', state.ceilingFt + 'FT AMSL exceeds every altitude step the area touches ' +
+        '(highest is ' + highest + 'FT AMSL).']);
+    } else if (amsl.length) {
+      var enclosing = amsl.filter(function (s) { return s.all && s.limit >= state.ceilingFt; });
+      out.push(enclosing.length
+        ? ['ok', state.ceilingFt + 'FT AMSL is within "' + enclosing[0].name +
+            '", which covers the whole NOTAM area.']
+        : ['warn', state.ceilingFt + 'FT AMSL fits the highest step the area touches (' +
+            highest + 'FT AMSL), but that step does not cover the whole area.']);
+    }
+    var lower = amsl.filter(function (s) { return s.limit < state.ceilingFt; });
+    if (lower.length) {
+      out.push(['warn', 'Part of the area is limited to ' +
+        lower.map(function (s) { return s.limit + 'FT'; }).join(', ') +
+        ' AMSL — confirm the flight stays below that where it applies.']);
+    }
+    steps.filter(function (s) { return s.datum === 'AGL'; }).forEach(function (s) {
+      out.push(['warn', 'Area touches "' + s.name + '" — an AGL limit, which cannot be ' +
+        'compared to an AMSL ceiling here.']);
+    });
+  }
+
+  out.push(qContains(d)
+    ? ['ok', 'Q) circle (' + d.qRadius + 'NM at the rounded centre) contains the NOTAM area.']
+    : ['bad', 'Q) circle does not contain the NOTAM area \u2014 minute-rounding shifted the centre ' +
+        d.qShift.toFixed(2) + 'NM.']);
+
+  if (f.start && f.end) {
+    if (f.end <= f.start) {
+      out.push(['bad', 'End time is not after the start time.']);
+    } else {
+      var hrs = (f.end - f.start) / 3600000;
+      out.push(['ok', 'Active for ' + hrs.toFixed(1) + ' hours.']);
+    }
+    if (f.start < new Date()) out.push(['warn', 'Start time is in the past.']);
+    if (zoneOffset(f.start, state.tz) !== zoneOffset(f.end, state.tz)) {
+      out.push(['warn', 'The period crosses a daylight-saving change \u2014 check both UTC stamps.']);
+    }
+  } else {
+    out.push(['bad', 'Start and end times are not both set.']);
+  }
+
+  if (state.mission) {
+    var worst = 0;
+    state.mission.points.forEach(function (p) {
+      var dd = vincentyInverse(state.lat, state.lon, p.lat, p.lon).distance / M_PER_NM;
+      if (dd > worst) worst = dd;
+    });
+    out.push(worst <= state.radiusNm + 1e-9
+      ? ['ok', 'All ' + state.mission.points.length + ' mission waypoints are inside the NOTAM area (furthest ' +
+          worst.toFixed(2) + 'NM).']
+      : ['bad', 'A mission waypoint is ' + worst.toFixed(2) + 'NM from the centre, outside the ' +
+          state.radiusNm.toFixed(1) + 'NM area.']);
+  } else {
+    out.push(['warn', 'No mission loaded \u2014 the area has not been checked against a flight plan.']);
+  }
+
+  if (!a.verified) {
+    out.push(['warn', a.id + ' ARP and variation are unverified \u2014 check against current ERSA before submitting.']);
+  }
+
+  out.push(['warn', 'Manual check: "ALL OPS WILL BE OUTSIDE CONTROLLED AIRSPACE" cannot be verified here.']);
+  return out;
+}
+
+function renderLint(f) {
+  var items = lintItems(f);
+  document.getElementById('lint').innerHTML = '<ul>' + items.map(function (i) {
+    return '<li class="' + i[0] + '">' + i[1] + '</li>';
+  }).join('') + '</ul>';
+}
+
+function renderTimes(f) {
+  var el = document.getElementById('timeInfo');
+  if (!f.start || !f.end) { el.textContent = 'Set both times to get Items B) and C).'; return; }
+  var fmt = function (d) {
+    return d.toISOString().slice(0, 16).replace('T', ' ') + 'Z';
+  };
+  el.innerHTML = 'B) <b>' + f.itemB + '</b> = ' + fmt(f.start) + ' &nbsp;|&nbsp; C) <b>' + f.itemC +
+    '</b> = ' + fmt(f.end) + '<br>Local zone: ' + zoneLabel(f.start, state.tz) +
+    ' \u2192 ' + zoneLabel(f.end, state.tz);
+}
+
+function renderCeiling() {
+  var steps = altitudeSteps();
+  var el = $('ceilInfo');
+  if (!steps.length) {
+    el.innerHTML = 'Feeds Item G) and the Q) upper level (FL' +
+      pad(Math.round(state.ceilingFt / 100), 3) + '). Area touches no mapped altitude step.';
+    return;
+  }
+  el.innerHTML = 'Feeds Item G) and the Q) upper level (FL' +
+    pad(Math.round(state.ceilingFt / 100), 3) + '). Steps the area touches: ' +
+    steps.map(function (s) {
+      return s.limit + 'FT ' + s.datum + (s.all ? ' (covers whole area)' : ' (part)');
+    }).join(', ') + '.';
+}
+
+function render() {
+  var f = buildFields();
+  renderFields(f);
+  renderCeiling();
+  renderLint(f);
+  renderTimes(f);
+  drawNotam();
+  drawMission();
+  centreMarker.setLatLng([state.lat, state.lon]);
+}
+
+/* ------------------------------------------------------------------ *
+ * Wiring.
+ * ------------------------------------------------------------------ */
+
+function $(id) { return document.getElementById(id); }
+
+function fillSelect(el, items, labelFn, valueFn) {
+  el.innerHTML = items.map(function (it, i) {
+    return '<option value="' + (valueFn ? valueFn(it) : i) + '">' + labelFn(it) + '</option>';
+  }).join('');
+}
+
+fillSelect($('aerodrome'), P.aerodromes, function (a) {
+  return a.id + ' \u2014 ' + a.name + (a.verified ? '' : '  (unverified)');
+}, function (a) { return a.id; });
+
+fillSelect($('aircraft'), P.aircraft, function (a) {
+  return a.label + (a.verified ? '' : '  (unverified)');
+}, function (a) { return a.descriptor; });
+
+fillSelect($('siteSelect'), P.sites, function (s) { return s.label; });
+
+function syncInputs() {
+  $('lat').value = state.lat.toFixed(7);
+  $('lon').value = state.lon.toFixed(7);
+  $('radius').value = state.radiusNm;
+  $('radiusUnit').value = state.radiusUnit;
+  $('buffer').value = state.bufferNm;
+  $('ceiling').value = state.ceilingFt;
+  $('aerodrome').value = state.aerodrome.id;
+  $('aircraftText').value = state.aircraft;
+  $('contactName').value = state.contactName;
+  $('contactPhone').value = state.contactPhone;
+  $('freq').value = state.freq;
+  $('tz').value = state.tz;
+  $('startLocal').value = state.startLocal;
+  $('endLocal').value = state.endLocal;
+  showNotes();
+}
+
+function showNotes() {
+  var a = ad();
+  var an = $('adNote');
+  if (a.verified) { an.hidden = true; }
+  else { an.hidden = false; an.innerHTML = '<span class="badge">unverified</span> Check ' + a.id +
+    ' ARP and variation against current ERSA.'; }
+
+  var ac = P.aircraft.filter(function (x) { return x.descriptor === state.aircraft; })[0];
+  var acn = $('acNote');
+  if (ac && !ac.verified) {
+    acn.hidden = false;
+    acn.innerHTML = '<span class="badge">unverified</span> ' + (ac.note || 'Confirm the type wording and MTOW.');
+  } else { acn.hidden = true; }
+}
+
+$('lat').addEventListener('change', function () {
+  var v = parseCoord(this.value, true);
+  if (isFinite(v)) { state.lat = v; } syncInputs(); render();
+});
+$('lon').addEventListener('change', function () {
+  var v = parseCoord(this.value, false);
+  if (isFinite(v)) { state.lon = v; } syncInputs(); render();
+});
+$('radius').addEventListener('input', function () {
+  var v = parseFloat(this.value); if (v > 0) { state.radiusNm = v; render(); }
+});
+$('radiusUnit').addEventListener('change', function () {
+  state.radiusUnit = this.value; render();
+});
+$('buffer').addEventListener('input', function () {
+  var v = parseFloat(this.value); if (v >= 0) state.bufferNm = v;
+});
+$('ceiling').addEventListener('input', function () {
+  var v = parseFloat(this.value); if (v >= 0) { state.ceilingFt = v; render(); }
+});
+document.querySelectorAll('[data-ceil]').forEach(function (b) {
+  b.addEventListener('click', function () {
+    state.ceilingFt = +this.getAttribute('data-ceil');
+    $('ceiling').value = state.ceilingFt;
+    render();
+  });
+});
+$('aerodrome').addEventListener('change', function () {
+  var id = this.value;
+  state.aerodrome = P.aerodromes.filter(function (a) { return a.id === id; })[0];
+  showNotes(); render();
+});
+$('aircraft').addEventListener('change', function () {
+  state.aircraft = this.value; $('aircraftText').value = this.value; showNotes(); render();
+});
+$('aircraftText').addEventListener('input', function () {
+  state.aircraft = this.value.toUpperCase(); render();
+});
+$('contactName').addEventListener('input', function () {
+  state.contactName = this.value.toUpperCase(); render();
+});
+$('contactPhone').addEventListener('input', function () { state.contactPhone = this.value; render(); });
+$('freq').addEventListener('input', function () { state.freq = this.value; render(); });
+$('tz').addEventListener('change', function () { state.tz = this.value; render(); });
+$('startLocal').addEventListener('input', function () { state.startLocal = this.value; render(); });
+$('endLocal').addEventListener('input', function () { state.endLocal = this.value; render(); });
+
+function fitMission() {
+  if (!state.mission || !state.mission.points.length) return;
+  var pts = state.mission.points.slice();
+  if (state.mission.home) pts.push(state.mission.home);
+  var c = enclosingCircle(pts);
+  state.lat = c.lat; state.lon = c.lon;
+  // Round the radius up to 0.1NM so the drawn circle always covers the mission.
+  state.radiusNm = Math.max(0.1, Math.ceil((c.radius / M_PER_NM + state.bufferNm) * 10) / 10);
+  syncInputs(); render();
+  zoomArea();
+}
+
+function zoomArea() {
+  var ring = geoCircle(state.lat, state.lon, state.radiusNm * M_PER_NM, 32);
+  map.fitBounds(L.latLngBounds(ring).extend([ad().lat, ad().lon]), { padding: [30, 30] });
+}
+
+$('fitMission').addEventListener('click', fitMission);
+$('zoomArea').addEventListener('click', zoomArea);
+
+function loadMissionText(text, name) {
+  var m = parseMission(text);
+  if (!m.points.length) {
+    $('missionInfo').textContent = 'No usable waypoints found in ' + name + '.';
+    return;
+  }
+  state.mission = m;
+  $('missionInfo').innerHTML = name + ': <b>' + m.points.length + '</b> nav waypoints' +
+    (m.home ? ' + home' : '') +
+    (m.skipped ? ', ' + m.skipped + ' non-nav/zero rows ignored' : '') +
+    (m.bad > 0 ? ', ' + m.bad + ' unparsable lines' : '');
+  fitMission();
+}
+
+function readFile(file, cb) {
+  var r = new FileReader();
+  r.onload = function () { cb(String(r.result), file.name); };
+  r.readAsText(file);
+}
+
+$('missionFile').addEventListener('change', function () {
+  if (this.files[0]) readFile(this.files[0], loadMissionText);
+});
+
+// Drag a mission or KML straight onto the map.
+['dragover', 'drop'].forEach(function (ev) {
+  document.addEventListener(ev, function (e) { e.preventDefault(); });
+});
+document.addEventListener('drop', function (e) {
+  var f = e.dataTransfer && e.dataTransfer.files[0];
+  if (!f) return;
+  if (/\.kml$/i.test(f.name)) readFile(f, loadKmlText);
+  else readFile(f, loadMissionText);
+});
+
+/* Runtime KML load, for an area file other than the built-in one. */
+function loadKmlText(text) {
+  var doc = new DOMParser().parseFromString(text, 'text/xml');
+  var group = L.layerGroup().addTo(map);
+  var polys = doc.getElementsByTagName('coordinates');
+  for (var i = 0; i < polys.length; i++) {
+    var pts = String(polys[i].textContent).trim().split(/\s+/).map(function (t) {
+      var p = t.split(','); return [parseFloat(p[1]), parseFloat(p[0])];
+    }).filter(function (p) { return isFinite(p[0]) && isFinite(p[1]); });
+    if (pts.length >= 2) L.polyline(pts, { color: '#7fd3ff', weight: 1.5 }).addTo(group);
+  }
+}
+$('kmlBtn').addEventListener('click', function () { $('kmlFile').click(); });
+$('kmlFile').addEventListener('change', function () {
+  if (this.files[0]) readFile(this.files[0], loadKmlText);
+});
+
+$('toggleApproved').addEventListener('click', function () {
+  approvedOn = !approvedOn;
+  this.textContent = 'Approved area: ' + (approvedOn ? 'on' : 'off');
+  drawApproved();
+});
+
+$('loadSite').addEventListener('click', function () {
+  var s = P.sites[+$('siteSelect').value];
+  state.lat = s.lat; state.lon = s.lon;
+  state.radiusNm = s.radiusNm; state.ceilingFt = s.ceilingFt;
+  state.aerodrome = P.aerodromes.filter(function (a) { return a.id === s.aerodrome; })[0] || P.aerodromes[0];
+  var ac = P.aircraft.filter(function (a) { return a.label === s.aircraft; })[0];
+  if (ac) { state.aircraft = ac.descriptor; $('aircraft').value = ac.descriptor; }
+  if (s.contact) {
+    var c = P.contacts.filter(function (x) { return x.name === s.contact; })[0];
+    if (c) { state.contactName = c.name; state.contactPhone = c.phone; }
+  }
+  if (s.freq) state.freq = s.freq;
+  syncInputs(); render(); zoomArea();
+});
+
+$('saveJson').addEventListener('click', function () {
+  var blob = new Blob([JSON.stringify(state, function (k, v) {
+    return k === 'mission' ? undefined : v;
+  }, 2)], { type: 'application/json' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'notam-' + (state.startLocal || 'draft').replace(/[:T]/g, '') + '.json';
+  a.click();
+});
+$('loadJsonBtn').addEventListener('click', function () { $('loadJson').click(); });
+$('loadJson').addEventListener('change', function () {
+  if (!this.files[0]) return;
+  readFile(this.files[0], function (txt) {
+    var o = JSON.parse(txt);
+    Object.keys(o).forEach(function (k) { if (k !== 'mission') state[k] = o[k]; });
+    state.aerodrome = P.aerodromes.filter(function (a) { return a.id === o.aerodrome.id; })[0] || state.aerodrome;
+    syncInputs(); render(); zoomArea();
+  });
+});
+
+/* Click a field to copy it. */
+$('fields').addEventListener('click', function (e) {
+  var el = e.target.closest('.val');
+  if (!el) return;
+  navigator.clipboard.writeText(el.getAttribute('data-copy')).then(function () {
+    el.classList.add('copied');
+    setTimeout(function () { el.classList.remove('copied'); }, 700);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Verify a published NOTAM.
+ * ------------------------------------------------------------------ */
+
+$('checkBtn').addEventListener('click', function () {
+  var t = $('checkText').value;
+  var out = [];
+
+  var pos = /(\d{6}(?:\.\d+)?S|\d{6}(?:\.\d+)?N)\s+(\d{7}(?:\.\d+)?E|\d{7}(?:\.\d+)?W)/.exec(t);
+  var pairs = [];
+  var re = /BRG\s+(\d{2,3})\s+MAG\s+([\d.]+)\s*NM/gi, m;
+  while ((m = re.exec(t))) pairs.push({ brg: +m[1], dist: parseFloat(m[2]), at: m.index });
+
+  if (!pairs.length) {
+    out.push(['warn', 'No "BRG nnn MAG n.nNM" found in the pasted text.']);
+  } else {
+    var brgSet = {}, distSet = {};
+    pairs.forEach(function (p) { brgSet[pad(p.brg, 3)] = 1; distSet[p.dist.toFixed(1)] = 1; });
+    var bk = Object.keys(brgSet), dk = Object.keys(distSet);
+    out.push(bk.length === 1
+      ? ['ok', 'All ' + pairs.length + ' bearing references agree (' + bk[0] + ').']
+      : ['bad', 'Bearings disagree within the NOTAM: ' + bk.join(', ') + '.']);
+    out.push(dk.length === 1
+      ? ['ok', 'All ' + pairs.length + ' distance references agree (' + dk[0] + 'NM).']
+      : ['bad', 'Distances disagree within the NOTAM: ' + dk.join('NM, ') + 'NM.']);
+  }
+
+  if (pos) {
+    var la = parseCoord(pos[1], true), lo = parseCoord(pos[2], false);
+    var a = ad();
+    var inv = vincentyInverse(a.lat, a.lon, la, lo);
+    var mb = ((inv.bearing - a.variation) % 360 + 360) % 360;
+    var dn = inv.distance / M_PER_NM;
+    out.push(['ok', 'Position ' + pos[1] + ' ' + pos[2] + ' computes to BRG ' +
+      pad(Math.round(mb) % 360 || 360, 3) + ' MAG ' + dn.toFixed(1) + 'NM FM ' + a.id +
+      ' (ARP + ' + a.variation + '\u00b0E variation).']);
+    pairs.forEach(function (p) {
+      if (Math.abs(p.brg - mb) > 1.5 && Math.abs(p.brg - mb) < 358.5) {
+        out.push(['bad', 'Quoted BRG ' + pad(p.brg, 3) + ' differs from the computed ' +
+          mb.toFixed(1) + '.']);
+      }
+      if (Math.abs(p.dist - dn) > 0.15) {
+        out.push(['bad', 'Quoted ' + p.dist.toFixed(1) + 'NM differs from the computed ' +
+          dn.toFixed(2) + 'NM.']);
+      }
+    });
+  } else {
+    out.push(['warn', 'No DDMMSS position found, so bearings could not be recomputed.']);
+  }
+
+  var q = /Q\)\s*\S*?\/(\d{3})\/(\d{3})\//.exec(t);
+  var gm = /G\)\s*(\d+)\s*FT\s*AMSL/i.exec(t);
+  if (q && gm) {
+    out.push(pad(Math.round(+gm[1] / 100), 3) === q[2]
+      ? ['ok', 'Q) upper ' + q[2] + ' agrees with G) ' + gm[1] + 'FT AMSL.']
+      : ['bad', 'Q) upper ' + q[2] + ' disagrees with G) ' + gm[1] + 'FT AMSL.']);
+  }
+
+  document.getElementById('checkOut').innerHTML =
+    '<div id="lint"><ul>' + out.map(function (i) {
+      return '<li class="' + i[0] + '">' + i[1] + '</li>';
+    }).join('') + '</ul></div>';
+});
+
+/* ------------------------------------------------------------------ *
+ * Go.
+ * ------------------------------------------------------------------ */
+
+(function init() {
+  var now = new Date();
+  var pad2 = function (n) { return pad(n, 2); };
+  var fmtLocal = function (d) {
+    var p = {};
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: state.tz, hour12: false, year: 'numeric', month: '2-digit',
+      day: '2-digit', hour: '2-digit', minute: '2-digit'
+    }).formatToParts(d).forEach(function (x) { p[x.type] = x.value; });
+    return p.year + '-' + p.month + '-' + p.day + 'T' + (p.hour % 24 === 0 ? '00' : pad2(p.hour % 24)) + ':00';
+  };
+  state.startLocal = fmtLocal(new Date(now.getTime() + 24 * 3600e3));
+  state.endLocal = fmtLocal(new Date(now.getTime() + 30 * 3600e3));
+
+  syncInputs();
+  drawApproved();
+  render();
+  zoomArea();
+})();
+</script>
+</body>
+</html>
