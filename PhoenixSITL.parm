@@ -1,0 +1,155 @@
+# PhoenixSITL.parm - ARACE Phoenix VTOL quadplane, tuned against a real flight
+#
+# Loaded by go.sh / go-headless.sh via sim_vehicle.py --add-param-file. These are
+# applied as DEFAULTS, so a value already saved in eeprom.bin wins. To pick up
+# changes made here, delete eeprom.bin and restart, then reload the mission:
+#
+#     rm eeprom.bin && ./go-headless.sh
+#     wp load orroral4.txt
+#
+# Reference flight: log2.bin, 2026-07-27, 94 min, 82 min of it in fixed wing.
+# The aircraft is an ARACE Phoenix (canard, 6 VTOL motors, front two tilting)
+# with a Starlink Mini fitted on top, which costs it both weight and drag.
+#
+# What is NOT here: airframe mass, the drag polar, the forward thrust model and
+# the 12S pack electrics have no parameters, so they stay in libraries/SITL
+# (SIM_Plane.cpp and SIM_Frame.cpp, both gated on a "quadplane" frame string).
+# See harness.md for how each number was measured.
+
+# ---------------------------------------------------------------------------
+# Battery
+# ---------------------------------------------------------------------------
+# 39 Ah 12S pack. SIM_BATT_CAP_AH is what actually discharges in the simulator;
+# BATT_CAPACITY is what the autopilot believes, and the two must agree or the
+# reported percentage is meaningless for planning.
+SIM_BATT_CAP_AH  39
+BATT_CAPACITY    39000
+BATT_MONITOR     4
+# Starting pack voltage. This re-initialises state of charge against the 50.4 V
+# full-charge point, so 46 V starts the flight at ~99%.
+SIM_BATT_VOLTAGE 46
+
+# Forward motor electrical model, I = A*throttle^EXP + I_FIXED.
+# Fitted to the three measured level-flight points: 6.20 A at 50.1% throttle,
+# 10.64 A at 58.6%, 22.50 A at 70.9%. The exponent is steep because thrust falls
+# off with airspeed - at a fixed 20 m/s the prop unloads as it speeds up.
+# I_FIXED is the avionics/Starlink/payload load that never goes away.
+# Set 20 / 1 / 0 to get the historic hard-coded linear model back.
+SIM_FWD_THR_A    96.37
+SIM_FWD_THR_EXP  4.48
+SIM_FWD_I_FIXED  1.83
+
+# ---------------------------------------------------------------------------
+# Speeds
+# ---------------------------------------------------------------------------
+# 20 m/s cruise is the speed the reference flight was flown at, and the speed
+# every measurement in harness.md is referenced to.
+AIRSPEED_CRUISE  20
+AIRSPEED_MIN     17
+AIRSPEED_MAX     32
+AIRSPEED_STALL   13
+MIN_GROUNDSPEED  6
+
+# ---------------------------------------------------------------------------
+# TECS
+# ---------------------------------------------------------------------------
+# Long time constants: this is a heavy aircraft flown for endurance, and the
+# gentle height/speed response is what keeps cruise throttle steady enough for
+# the battery numbers to mean anything.
+TECS_CLMB_MAX    5.5
+TECS_SINK_MAX    6
+TECS_SINK_MIN    1.7
+TECS_TIME_CONST  7
+TECS_HDEM_TCONST 7
+TECS_PTCH_DAMP   0.7
+TECS_PTCH_FF_K   -0.08
+TECS_INTEG_GAIN  0.1
+TECS_VERT_ACC    5
+TECS_PITCH_MAX   14
+TECS_PITCH_MIN   -15
+TECS_OPTIONS     4
+TECS_APPR_SMAX   5.5
+TECS_LAND_ARSPD  15
+TECS_LAND_SPDWGT 1
+TECS_LAND_TCONST 1
+
+# ---------------------------------------------------------------------------
+# Attitude and navigation limits
+# ---------------------------------------------------------------------------
+# Deliberately gentle. 40 deg of bank at 20 m/s is already a 1.3g turn on an
+# 11.5 kg airframe, and turn rate feeds straight back into mission time.
+ROLL_LIMIT_DEG   40
+PTCH_LIM_MAX_DEG 15
+PTCH_LIM_MIN_DEG -20
+PTCH_TRIM_DEG    1
+NAVL1_PERIOD     20
+WP_LOITER_RAD    150
+
+# ---------------------------------------------------------------------------
+# Airspeed sensors
+# ---------------------------------------------------------------------------
+# Two sensors, matching the real aircraft. Skip calibration so a run started
+# from a wiped eeprom is immediately usable.
+ARSPD_SKIP_CAL   1
+ARSPD_OFFSET     2013.95
+ARSPD_WIND_MAX   17
+ARSPD_WIND_WARN  15
+ARSPD2_TYPE      2
+ARSPD2_PIN       1
+ARSPD2_SKIP_CAL  1
+ARSPD2_OFFSET    2013.95
+
+# ---------------------------------------------------------------------------
+# Estimation
+# ---------------------------------------------------------------------------
+AHRS_GPS_USE     2
+AHRS_GPS_MINSATS 12
+EK3_AFFINITY     12
+EK3_SRC1_POSZ    3
+
+# ---------------------------------------------------------------------------
+# Terrain following
+# ---------------------------------------------------------------------------
+# The Orroral survey is flown terrain-following over a valley, so this changes
+# the climb profile and therefore the energy used.
+TERRAIN_FOLLOW   1
+TERRAIN_SPACING  30
+TERRAIN_LOOKAHD  500
+TERRAIN_OFS_MAX  5
+TERRAIN_OPTIONS  1
+
+# ---------------------------------------------------------------------------
+# Fence and RTL
+# ---------------------------------------------------------------------------
+# The fence polygon lives in storage, not in parameters, so it is not carried
+# by this file. With a wiped eeprom it must be loaded before arming, otherwise
+# prearm fails with "Fences enabled, but none selected":
+#     fence load instrument_fence.txt
+FENCE_ENABLE     1
+FENCE_AUTOENABLE 3
+FENCE_OPTIONS    0
+RTL_ALTITUDE     100
+RTL_RADIUS       200
+RTL_AUTOLAND     4
+
+# ---------------------------------------------------------------------------
+# VTOL
+# ---------------------------------------------------------------------------
+# Hover thrust for the simulated frame. Hover is deliberately not tuned on this
+# branch - the aircraft spends very little time in it and the fixed-wing phases
+# are what the battery model is validated against.
+Q_M_THST_HOVER   0.556583
+Q_OPTIONS        147488
+
+# ---------------------------------------------------------------------------
+# Environment
+# ---------------------------------------------------------------------------
+# Wind from the reference flight, so simulated and real energy use are
+# comparable. Set SIM_WIND_SPD 0 to fly the mission in still air.
+SIM_WIND_SPD     4.3
+SIM_WIND_DIR     341
+
+# ---------------------------------------------------------------------------
+# Misc
+# ---------------------------------------------------------------------------
+SCR_ENABLE       1
