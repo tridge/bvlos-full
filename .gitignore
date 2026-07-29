@@ -1,0 +1,24 @@
+# SITL run artifacts. These are regenerated on every run, and eeprom.bin in
+# particular conflicts constantly - it is a binary that the simulator rewrites
+# whenever anything is changed in flight.
+#
+# Nothing here needs to be kept: PhoenixSITL.parm holds the tuning, and the
+# mission and fence are loaded from orroral4.txt / southnamadgi.txt and
+# instrument_fence.txt. To rebuild the vehicle state from scratch:
+#
+#     rm eeprom.bin && ./go-headless.sh
+#     wp load orroral4.txt
+#     fence load instrument_fence.txt
+#
+# Anchored with a leading slash so the deliberate snapshots under Archive/
+# stay tracked.
+/eeprom*.bin
+
+# per-run logs and MAVProxy output
+/logs/
+PhoenixSITL/logs/
+/PhoenixSITL-headless/
+/mav.parm
+/mav_*.parm
+/mav.tlog
+/mav.tlog.raw
