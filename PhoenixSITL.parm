@@ -25,9 +25,19 @@
 SIM_BATT_CAP_AH  39
 BATT_CAPACITY    39000
 BATT_MONITOR     4
-# Starting pack voltage. This re-initialises state of charge against the 50.4 V
-# full-charge point, so 46 V starts the flight at ~99%.
-SIM_BATT_VOLTAGE 46
+# Starting pack voltage. This does NOT just set the voltage - it sets the
+# simulated pack's STATE OF CHARGE, through the per-cell table in
+# SIM_Battery.cpp. 50.4 V is 4.2 V/cell, so the sim starts genuinely full and
+# agrees with the autopilot's coulomb count from BATT_CAPACITY above.
+#
+# Do not lower this to "start part-charged". 46 V is 3.83 V/cell, which starts
+# the simulated pack at 59% (22.8 of 39 Ah) while the autopilot still counts
+# down from 100%. The pack then runs dry ~40% early, its voltage reaches zero,
+# and SITL_State_common.cpp silently abandons the battery model for a legacy
+# fallback of V = SIM_BATT_VOLTAGE - 0.7*throttle and I = 50*throttle. That
+# shows up as current jumping to ~30 A with the VTOL motors off and voltage
+# pinned near 45.6 V - which looks like a vehicle problem but is neither.
+SIM_BATT_VOLTAGE 50.4
 
 # Forward motor electrical model, I = A*throttle^EXP + I_FIXED.
 # Fitted to the three measured level-flight points: 6.20 A at 50.1% throttle,
