@@ -142,14 +142,6 @@ Q_M_THST_HOVER   0.556583
 Q_OPTIONS        147488
 
 # ---------------------------------------------------------------------------
-# Environment
-# ---------------------------------------------------------------------------
-# Wind from the reference flight, so simulated and real energy use are
-# comparable. Set SIM_WIND_SPD 0 to fly the mission in still air.
-SIM_WIND_SPD     4.3
-SIM_WIND_DIR     341
-
-# ---------------------------------------------------------------------------
 # Misc
 # ---------------------------------------------------------------------------
 SCR_ENABLE       1
