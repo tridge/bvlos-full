@@ -1,0 +1,14 @@
+{
+  "_comment": "Phoenix SITL camera-payload profile, calibrated from 2026-08-21 log5.bin.",
+  "_usage": "./go.py --profile camera",
+  "_mass": "11.84 kg measured all-up; QuadPlane multiplies frame mass by 1.5.",
+  "mass": 7.8933333333,
+  "_drag": "Cd0 0.0706 from forward-ESC RPM/thrust fit; rounded to 0.071. Total drag at 20 m/s is about 13.3 N.",
+  "c_drag_p": 0.071,
+  "_hover": "Scale the reference current with mass to preserve the calibrated hover W/N.",
+  "refVoltage": 48.0,
+  "refCurrent": 26.4522,
+  "maxVoltage": 50.4,
+  "battCapacityAh": 39.0,
+  "refBatRes": 0.041
+}

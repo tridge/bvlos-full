@@ -1,0 +1,53 @@
+
+orroral4-log2.bin:
+ - raw final BAT.RemPct 50%
+ - raw final BAT.EnrgTot 908 Wh
+ - arm-to-disarm: 93.96 min, 17.444 Ah, 806.6 Wh, RemPct 95% -> 51%
+
+
+orroral4-sitl, original starlink profile, logs/00000012.BIN:
+ - starlink profile
+ - raw final BAT.RemPct 57%
+ - raw final BAT.EnrgTot 810 Wh
+ - arm-to-disarm: 91.11 min, 15.859 Ah, 751.3 Wh, RemPct 98% -> 57%
+
+orroral4-sitl, camera conservative, logs/00000013.BIN:
+ - camera-conservative profile
+ - raw final BAT.RemPct 50%
+ - raw final BAT.EnrgTot 932 Wh
+ - arm-to-disarm: 91.01 min, 18.951 Ah, 889.6 Wh, RemPct 99% -> 50%
+
+orroral4-sitl, updated starlink fit, 2026-08-23 validation run:
+ - log /data/buildlogs/phoenix/2026-08-23/orroral4-starlink-fit.BIN
+ - effective replay wind: 5.7 m/s from 344 degrees, turbulence 0.1
+ - arm-to-disarm: 93.67 min, 17.022 Ah, 801.7 Wh, RemPct 98% -> 55%
+ - error against real arm-to-disarm window: -0.29 min, -0.422 Ah, -4.9 Wh
+ - remaining phase error: level -18.3 Wh, descent +14.4 Wh; the total benefits
+   from cancellation, so retain a 4% level-current allowance for long cruises
+
+Do not compare raw final counters between runs. The real aircraft had already
+used 81.5 Wh when armed, while the original SITL run had used 31.4 Wh. Use the
+arm-to-disarm deltas above. The real wind vector averaged 4.05 m/s from 344
+degrees, but its magnitude varied from p50 4.41 to p95 6.47 m/s. SITL's random
+turbulence is high-frequency and did not reproduce that mission-time penalty;
+5.7 m/s is an effective steady wind for replaying this log, not a forecast.
+
+Reproduce the comparison with:
+ python3 ../../Tools/autotest/phoenix_mission_compare.py \
+     orroral4-log2.bin \
+     /data/buildlogs/phoenix/2026-08-23/orroral4-starlink-fit.BIN
+
+orroral4 camera counterfactual, paired historical-wind replays, 2026-08-23:
+ - central camera log:
+   /data/buildlogs/phoenix/2026-08-23/orroral4-camera-central.BIN
+ - conservative camera log:
+   /data/buildlogs/phoenix/2026-08-23/orroral4-camera-conservative.BIN
+ - central raw SITL: 93.50 min, 19.948 Ah, 933.1 Wh
+ - conservative raw SITL: 93.50 min, 20.329 Ah, 950.2 Wh
+ - paired central increment over updated Starlink SITL: +2.926 Ah, +131.4 Wh
+ - paired conservative increment: +3.307 Ah, +148.5 Wh
+ - applying those increments to the real no-camera flight gives an expected
+   camera result of 20.370 to 20.751 Ah and 938.0 to 955.1 Wh
+ - this is 52.2% to 53.2% of the 39 Ah nameplate capacity; from the real
+   flight's 95% indicated state at arming, expect about 42% to 43% indicated
+   remaining at disarm, before adding an operational reserve

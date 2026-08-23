@@ -1,0 +1,11 @@
+{
+  "_comment": "Phoenix camera-payload conservative drag case (log4 upper cross-check).",
+  "_usage": "./go.py --profile camera-conservative --headless",
+  "mass": 7.8933333333,
+  "c_drag_p": 0.075,
+  "refVoltage": 48.0,
+  "refCurrent": 26.4522,
+  "maxVoltage": 50.4,
+  "battCapacityAh": 39.0,
+  "refBatRes": 0.041
+}

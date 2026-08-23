@@ -1,0 +1,14 @@
+{
+  "_comment": "Phoenix Starlink-only SITL profile, calibrated from 2026-07-27 orroral4-log2.bin.",
+  "_usage": "./go.py --profile starlink --headless",
+  "_mass": "11.19 kg camera-free all-up mass; QuadPlane multiplies frame mass by 1.5.",
+  "mass": 7.46,
+  "_drag": "Cd0 0.0682 from the idle-glide fit; rounded to 0.068. Total drag at 20 m/s is about 12.4 N.",
+  "c_drag_p": 0.068,
+  "_hover": "Reference current fitted to the VTOL/transition energy in orroral4-log2.bin.",
+  "refVoltage": 48.0,
+  "refCurrent": 25.0,
+  "maxVoltage": 50.4,
+  "battCapacityAh": 39.0,
+  "refBatRes": 0.041
+}

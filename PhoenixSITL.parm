@@ -1,20 +1,22 @@
 # PhoenixSITL.parm - ARACE Phoenix VTOL quadplane, tuned against a real flight
 #
-# Loaded by go.sh / go-headless.sh via sim_vehicle.py --add-param-file. These are
+# Loaded by go.py via sim_vehicle.py --add-param-file. These are
 # applied as DEFAULTS, so a value already saved in eeprom.bin wins. To pick up
 # changes made here, delete eeprom.bin and restart, then reload the mission:
 #
-#     rm eeprom.bin && ./go-headless.sh
+#     ./go.py --profile camera --headless -w
 #     wp load orroral4.txt
 #
-# Reference flight: log2.bin, 2026-07-27, 94 min, 82 min of it in fixed wing.
+# Baseline flight: log2.bin, 2026-07-27, 94 min, 82 min of it in fixed wing.
+# Camera flight: log5.bin, 2026-08-21. The airframe mass and drag changes are
+# in phoenix-camera.json; the payload electrical load is included below.
 # The aircraft is an ARACE Phoenix (canard, 6 VTOL motors, front two tilting)
 # with a Starlink Mini fitted on top, which costs it both weight and drag.
 #
-# What is NOT here: airframe mass, the drag polar, the forward thrust model and
-# the 12S pack electrics have no parameters, so they stay in libraries/SITL
-# (SIM_Plane.cpp and SIM_Frame.cpp, both gated on a "quadplane" frame string).
-# See harness.md for how each number was measured.
+# Airframe mass, the drag polar and the 12S pack electrics are loaded from the
+# JSON selected by go.py. The forward thrust model has no runtime
+# parameter and remains in SIM_Plane.cpp, gated on a "quadplane" frame string.
+# See PHOENIX_CAMERA_PAYLOAD.md and harness.md for how the values were measured.
 
 # ---------------------------------------------------------------------------
 # Battery
@@ -40,14 +42,18 @@ BATT_MONITOR     4
 SIM_BATT_VOLTAGE 50.4
 
 # Forward motor electrical model, I = A*throttle^EXP + I_FIXED.
-# Fitted to the three measured level-flight points: 6.20 A at 50.1% throttle,
-# 10.64 A at 58.6%, 22.50 A at 70.9%. The exponent is steep because thrust falls
-# off with airspeed - at a fixed 20 m/s the prop unloads as it speeds up.
-# I_FIXED is the avionics/Starlink/payload load that never goes away.
+# The original curve was fitted to three selected throttle/current operating
+# points. These A and EXP values are instead fitted to the measured climb,
+# level and descent phase currents from a complete orroral4-log2.bin replay,
+# using the effective historical wind documented in PHOENIX_CAMERA_PAYLOAD.md.
+# I_FIXED is the avionics/Starlink/payload load that never goes away. The camera
+# flight needs about 1.2 A more than the camera-free RPM/current curve. The
+# selected 1.16 A increment is central to log5 and the log4 cross-check (about
+# 53 W at 46 V), taking this from 1.83 A to 2.99 A.
 # Set 20 / 1 / 0 to get the historic hard-coded linear model back.
-SIM_FWD_THR_A    96.37
-SIM_FWD_THR_EXP  4.48
-SIM_FWD_I_FIXED  1.83
+SIM_FWD_THR_A    134.275
+SIM_FWD_THR_EXP  5.056
+SIM_FWD_I_FIXED  2.99
 
 # ---------------------------------------------------------------------------
 # Speeds
@@ -87,7 +93,7 @@ TECS_LAND_TCONST 1
 # Attitude and navigation limits
 # ---------------------------------------------------------------------------
 # Deliberately gentle. 40 deg of bank at 20 m/s is already a 1.3g turn on an
-# 11.5 kg airframe, and turn rate feeds straight back into mission time.
+# 11.84 kg airframe, and turn rate feeds straight back into mission time.
 ROLL_LIMIT_DEG   40
 PTCH_LIM_MAX_DEG 15
 PTCH_LIM_MIN_DEG -20

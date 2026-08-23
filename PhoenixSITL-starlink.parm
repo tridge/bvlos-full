@@ -1,0 +1,8 @@
+# Starlink-only electrical overlay. Load after PhoenixSITL.parm. The throttle
+# curve is fitted to the climb, level and descent phase currents from
+# orroral4-log2.bin (2026-07-27). The 1.83 A intercept comes from the original
+# three-point throttle/current fit and represents the avionics and Starlink
+# load.
+SIM_FWD_THR_A    134.275
+SIM_FWD_THR_EXP  5.056
+SIM_FWD_I_FIXED  1.83
