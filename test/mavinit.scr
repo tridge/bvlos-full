@@ -5,6 +5,7 @@ map set wpcoloroverride 0xFF7000
 map follow 0
 set wpterrainadjust False
 set streamrate 1
+terrain set terrain_data_rate 50
 
 #takeoff point
 map center -35.28218274 149.00430510 
@@ -85,3 +86,5 @@ map circle -35.58315952 148.97785696 100 green
 map circle -35.322375 148.837935 500 green
 map circle -35.361621 148.877923 500 green
 
+#fire barrell 
+map circle -35.322178115264514 148.83799611532535 100 blue
