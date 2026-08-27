@@ -16,7 +16,6 @@ map set font_size 1
 
 gtheight
 gspeed2
-graph NAMED_VALUE_FLOAT['RSRP'].value*0.1
 # two maps
 module load map
 module load map
